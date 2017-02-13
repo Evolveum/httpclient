@@ -33,7 +33,7 @@
   <modelVersion>4.0.0</modelVersion>
   <artifactId>httpcomponents-client</artifactId>
   <name>Apache HttpComponents Client</name>
-  <version>4.5.4-SNAPSHOT</version>
+  <version>4.5.3.e1</version>
   <description>Apache HttpComponents Client is a library of components for building client side HTTP services</description>
   <url>http://hc.apache.org/httpcomponents-client-ga/</url>
   <inceptionYear>1999</inceptionYear>
@@ -56,6 +56,19 @@
     <system>Jira</system>
     <url>http://issues.apache.org/jira/browse/HTTPCLIENT</url>
   </issueManagement>
+
+<distributionManagement>
+    <repository>
+        <id>evolveum-nexus</id>
+        <name>Internal Releases</name>
+        <url>http://nexus.evolveum.com/nexus/content/repositories/releases/</url>
+    </repository>
+    <snapshotRepository>
+        <id>evolveum-nexus</id>
+        <name>Internal Snapshots</name>
+        <url>http://nexus.evolveum.com/nexus/content/repositories/snapshots/</url>
+    </snapshotRepository>
+</distributionManagement>
 
   <scm>
     <connection>scm:svn:https://svn.apache.org/repos/asf/httpcomponents/httpclient/branches/4.5.x</connection>
