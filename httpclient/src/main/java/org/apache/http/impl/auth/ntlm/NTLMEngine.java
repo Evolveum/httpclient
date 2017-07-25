@@ -24,42 +24,27 @@
  * <http://www.apache.org/>.
  *
  */
-package org.apache.http.impl.auth;
+package org.apache.http.impl.auth.ntlm;
 
-import org.apache.http.auth.AuthenticationException;
+import java.security.cert.X509Certificate;
 
 /**
- * Signals NTLM protocol failure.
- *
+ * Abstract NTLM authentication engine. The engine can be used to
+ * generate Type1 messages and Type3 messages in response to a
+ * Type2 challenge.
  *
  * @since 4.0
  */
-public class NTLMEngineException extends AuthenticationException {
+public interface NTLMEngine {
 
-    private static final long serialVersionUID = 6027981323731768824L;
+    NegotiateMessage generateNegotiateMessage( final Integer ntlmFlags ) throws NTLMEngineException;
 
-    public NTLMEngineException() {
-        super();
-    }
+    ChallengeMessage parseChallengeMessage( final byte[] messageBytes ) throws NTLMEngineException;
 
-    /**
-     * Creates a new NTLMEngineException with the specified message.
-     *
-     * @param message the exception detail message
-     */
-    public NTLMEngineException(final String message) {
-        super(message);
-    }
+    AuthenticateMessage generateAuthenticateMessage( final X509Certificate peerServerCertificate ) throws NTLMEngineException;
 
-    /**
-     * Creates a new NTLMEngineException with the specified detail message and cause.
-     *
-     * @param message the exception detail message
-     * @param cause the {@code Throwable} that caused this exception, or {@code null}
-     * if the cause is unavailable, unknown, or not a {@code Throwable}
-     */
-    public NTLMEngineException(final String message, final Throwable cause) {
-        super(message, cause);
-    }
+    NTLMHandle createClientHandle() throws NTLMEngineException;
+
+    NTLMHandle createServerHandle() throws NTLMEngineException;
 
 }

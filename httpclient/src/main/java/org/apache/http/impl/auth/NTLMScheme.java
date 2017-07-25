@@ -34,8 +34,9 @@ import org.apache.http.auth.Credentials;
 import org.apache.http.auth.InvalidCredentialsException;
 import org.apache.http.auth.MalformedChallengeException;
 import org.apache.http.auth.NTCredentials;
-import org.apache.http.impl.auth.NTLMEngineImpl.Type1Message;
-import org.apache.http.impl.auth.NTLMEngineImpl.Type3Message;
+import org.apache.http.impl.auth.ntlm.AuthenticateMessage;
+import org.apache.http.impl.auth.ntlm.NTLMEngineImpl;
+import org.apache.http.impl.auth.ntlm.NegotiateMessage;
 import org.apache.http.message.BufferedHeader;
 import org.apache.http.util.CharArrayBuffer;
 
@@ -133,12 +134,12 @@ public class NTLMScheme extends AuthSchemeBase {
         if (this.state == State.FAILED) {
             throw new AuthenticationException("NTLM authentication failed");
         } else if (this.state == State.CHALLENGE_RECEIVED) {
-            final Type1Message negoMessage = engine.generateType1MsgObject( null );
+            final NegotiateMessage negoMessage = engine.generateNegotiateMessage( null );
             response = negoMessage.getResponse();
             this.state = State.MSG_TYPE1_GENERATED;
         } else if (this.state == State.MSG_TYPE2_RECEVIED) {
-            engine.parseType2Message( this.challenge );
-            final Type3Message authenticateMessage = engine.generateType3MsgObject( null );
+            engine.parseChallengeMessage( this.challenge );
+            final AuthenticateMessage authenticateMessage = engine.generateAuthenticateMessage( null );
             response = authenticateMessage.getResponse();
             this.state = State.MSG_TYPE3_GENERATED;
         } else {

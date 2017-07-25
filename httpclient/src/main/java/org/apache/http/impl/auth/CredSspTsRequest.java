@@ -40,8 +40,10 @@ import org.apache.http.auth.MalformedChallengeException;
 public class CredSspTsRequest
 {
 
-    private static final int VERSION = 3;
+    private static final byte VERSION_MIN = 2;
+    private static final byte VERSION_MAX = 3;
 
+    private byte version = VERSION_MAX;
     private byte[] negoToken;
     private byte[] authInfo;
     private byte[] pubKeyAuth;
@@ -55,15 +57,22 @@ public class CredSspTsRequest
 
     public static CredSspTsRequest createNegoToken( final byte[] negoToken )
     {
+        return createNegoToken(VERSION_MAX, negoToken);
+    }
+
+    public static CredSspTsRequest createNegoToken( final byte version, final byte[] negoToken )
+    {
         final CredSspTsRequest req = new CredSspTsRequest();
+        req.version = version;
         req.negoToken = negoToken;
         return req;
     }
 
 
-    public static CredSspTsRequest createAuthInfo( final byte[] authInfo )
+    public static CredSspTsRequest createAuthInfo( final byte version, final byte[] authInfo )
     {
         final CredSspTsRequest req = new CredSspTsRequest();
+        req.version = version;
         req.authInfo = authInfo;
         return req;
     }
@@ -74,6 +83,17 @@ public class CredSspTsRequest
         final CredSspTsRequest req = new CredSspTsRequest();
         req.decode( buf );
         return req;
+    }
+
+    public byte getVersion()
+    {
+        return version;
+    }
+
+
+    public void setVersion( final byte version )
+    {
+        this.version = version;
     }
 
 
@@ -154,7 +174,11 @@ public class CredSspTsRequest
     {
         DerUtil.getByteAndAssert( buf, 0x02, "version type" );
         DerUtil.getLengthAndAssert( buf, 1, "version length" );
-        DerUtil.getByteAndAssert( buf, VERSION, "wrong protocol version" );
+        version = buf.get();
+        if ( version < VERSION_MIN || version > VERSION_MAX )
+        {
+            DerUtil.parseError( buf, "wrong protocol version; expected version between " + VERSION_MIN + " and " + VERSION_MAX + " but got " + version );
+        }
     }
 
 
@@ -220,7 +244,7 @@ public class CredSspTsRequest
 
         inner.put( ( byte ) ( 0x02 ) ); // INTEGER tag
         inner.put( ( byte ) 1 ); // length
-        inner.put( ( byte ) VERSION ); // value
+        inner.put( ( byte ) VERSION_MAX ); // value
 
         if ( negoToken != null )
         {

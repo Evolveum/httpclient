@@ -24,47 +24,42 @@
  * <http://www.apache.org/>.
  *
  */
-package org.apache.http.impl.auth;
+package org.apache.http.impl.auth.ntlm;
+
+import org.apache.http.auth.AuthenticationException;
 
 /**
- * Abstract NTLM authentication engine. The engine can be used to
- * generate Type1 messages and Type3 messages in response to a
- * Type2 challenge.
+ * Signals NTLM protocol failure.
+ *
  *
  * @since 4.0
  */
-public interface NTLMEngine {
+public class NTLMEngineException extends AuthenticationException {
+
+    private static final long serialVersionUID = 6027981323731768824L;
+
+    public NTLMEngineException() {
+        super();
+    }
 
     /**
-     * Generates a Type1 message given the domain and workstation.
+     * Creates a new NTLMEngineException with the specified message.
      *
-     * @param domain Optional Windows domain name. Can be {@code null}.
-     * @param workstation Optional Windows workstation name. Can be
-     *  {@code null}.
-     * @return Type1 message
-     * @throws NTLMEngineException
+     * @param message the exception detail message
      */
-    String generateType1Msg(
-            String domain,
-            String workstation) throws NTLMEngineException;
+    public NTLMEngineException(final String message) {
+        super(message);
+    }
 
     /**
-     * Generates a Type3 message given the user credentials and the
-     * authentication challenge.
+     * Creates a new NTLMEngineException with the specified detail message and cause.
      *
-     * @param username Windows user name
-     * @param password Password
-     * @param domain Windows domain name
-     * @param workstation Windows workstation name
-     * @param challenge Type2 challenge.
-     * @return Type3 response.
-     * @throws NTLMEngineException
+     * @param message the exception detail message
+     * @param cause the {@code Throwable} that caused this exception, or {@code null}
+     * if the cause is unavailable, unknown, or not a {@code Throwable}
      */
-    String generateType3Msg(
-            String username,
-            String password,
-            String domain,
-            String workstation,
-            String challenge) throws NTLMEngineException;
+    public NTLMEngineException(final String message, final Throwable cause) {
+        super(message, cause);
+    }
 
 }

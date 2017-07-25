@@ -59,6 +59,13 @@ import org.apache.http.auth.Credentials;
 import org.apache.http.auth.InvalidCredentialsException;
 import org.apache.http.auth.MalformedChallengeException;
 import org.apache.http.auth.NTCredentials;
+import org.apache.http.impl.auth.ntlm.AuthenticateMessage;
+import org.apache.http.impl.auth.ntlm.ChallengeMessage;
+import org.apache.http.impl.auth.ntlm.NTLMHandle;
+import org.apache.http.impl.auth.ntlm.NTLMEngine;
+import org.apache.http.impl.auth.ntlm.NTLMEngineException;
+import org.apache.http.impl.auth.ntlm.NTLMEngineImpl;
+import org.apache.http.impl.auth.ntlm.NegotiateMessage;
 import org.apache.http.message.BufferedHeader;
 import org.apache.http.protocol.HttpContext;
 import org.apache.http.ssl.SSLContexts;
@@ -116,10 +123,10 @@ public class CredSspScheme extends AuthSchemeBase
 
     private State state;
     private SSLEngine sslEngine;
-    private NTLMEngineImpl ntlmEngine;
+    private NTLMEngine ntlmEngine;
     private CredSspTsRequest lastReceivedTsRequest;
-    private NTLMEngineImpl.Handle ntlmOutgoingHandle;
-    private NTLMEngineImpl.Handle ntlmIncomingHandle;
+    private NTLMHandle ntlmOutgoingHandle;
+    private NTLMHandle ntlmIncomingHandle;
     private byte[] peerPublicKey;
 
     /**
@@ -264,13 +271,11 @@ public class CredSspScheme extends AuthSchemeBase
         if ( state == State.TLS_HANDSHAKE )
         {
             unwrapHandshake( inputString );
-            if ( develTrace )
-            {
+            if ( develTrace ) {
                 log.trace( "TLS handshake status: " + getSSLEngine().getHandshakeStatus() );
             }
-            if ( getSSLEngine().getHandshakeStatus() == HandshakeStatus.NOT_HANDSHAKING )
-            {
-                log.trace( "TLS handshake finished" );
+            if ( getSSLEngine().getHandshakeStatus() == HandshakeStatus.NOT_HANDSHAKING ) {
+                log.trace( "TLS handshake finished, handshaked " + getSSLEngine().getSession().getProtocol() );
                 state = State.TLS_HANDSHAKE_FINISHED;
             }
         }
@@ -280,8 +285,7 @@ public class CredSspScheme extends AuthSchemeBase
             final ByteBuffer buf = unwrap( inputString );
             state = State.NEGO_TOKEN_RECEIVED;
             lastReceivedTsRequest = CredSspTsRequest.createDecoded( buf );
-            if ( develTrace )
-            {
+            if ( develTrace ) {
                 log.trace( "Received tsrequest(negotoken:CHALLENGE):\n" + lastReceivedTsRequest.debugDump() );
             }
         }
@@ -316,51 +320,41 @@ public class CredSspScheme extends AuthSchemeBase
         final HttpContext context ) throws AuthenticationException
     {
         NTCredentials ntcredentials = null;
-        try
-        {
+        try {
             ntcredentials = ( NTCredentials ) credentials;
-        }
-        catch ( final ClassCastException e )
-        {
+        } catch ( final ClassCastException e ) {
             throw new InvalidCredentialsException(
                 "Credentials cannot be used for CredSSP authentication: "
                     + credentials.getClass().getName() );
         }
 
-        if ( ntlmEngine == null )
-        {
-
+        if ( ntlmEngine == null ) {
             ntlmEngine = new NTLMEngineImpl( ntcredentials, true );
         }
 
         String outputString = null;
 
-        if ( state == State.UNINITIATED )
-        {
+        if ( state == State.UNINITIATED ) {
             beginTlsHandshake();
             outputString = wrapHandshake();
             state = State.TLS_HANDSHAKE;
 
-        }
-        else if ( state == State.TLS_HANDSHAKE )
-        {
+        } else if ( state == State.TLS_HANDSHAKE ) {
             outputString = wrapHandshake();
 
-        }
-        else if ( state == State.TLS_HANDSHAKE_FINISHED )
-        {
+        } else if ( state == State.TLS_HANDSHAKE_FINISHED ) {
 
             final int ntlmFlags = getNtlmFlags();
             final ByteBuffer buf = allocateOutBuffer();
-            final NTLMEngineImpl.Type1Message ntlmNegoMessage = ntlmEngine.generateType1MsgObject( ntlmFlags );
+            final NegotiateMessage ntlmNegoMessage = ntlmEngine.generateNegotiateMessage( ntlmFlags );
             if ( develTrace )
             {
-                log.trace( "Prepared NTLM NEGOTIATE (type 1) message:\n" + ntlmNegoMessage.debugDump() );
+                log.trace( "Prepared NTLM NEGOTIATE message:\n" + ntlmNegoMessage.debugDump() );
             }
             final byte[] ntlmNegoMessageEncoded = ntlmNegoMessage.getBytes();
             if ( develTrace )
             {
-                log.trace( "Prepared NTLM NEGOTIATE (type 1) message (encoded):\n"
+                log.trace( "Prepared NTLM NEGOTIATE message (encoded):\n"
                     + DebugUtil.dump( ntlmNegoMessageEncoded ) );
             }
             final CredSspTsRequest req = CredSspTsRequest.createNegoToken( ntlmNegoMessageEncoded );
@@ -373,82 +367,72 @@ public class CredSspScheme extends AuthSchemeBase
             outputString = wrap( buf );
             state = State.NEGO_TOKEN_SENT;
 
-        }
-        else if ( state == State.NEGO_TOKEN_RECEIVED )
-        {
+        } else if ( state == State.NEGO_TOKEN_RECEIVED ) {
             final ByteBuffer buf = allocateOutBuffer();
-            final NTLMEngineImpl.Type2Message ntlmType2Message = ntlmEngine
-                .parseType2Message( lastReceivedTsRequest.getNegoToken() );
 
-            if ( develTrace )
-            {
-                log.trace( "Received NTLM CHALLENGE (type 2) message:\n" + ntlmType2Message.debugDump() );
+            final ChallengeMessage ntlmChallengeMessage = ntlmEngine.parseChallengeMessage( lastReceivedTsRequest.getNegoToken() );
+
+            if ( develTrace ) {
+                log.trace( "Received NTLM CHALLENGE message:\n" + ntlmChallengeMessage.debugDump() );
             }
 
             final X509Certificate peerServerCertificate = getPeerServerCertificate();
 
-            final NTLMEngineImpl.Type3Message ntlmAuthenticateMessage = ntlmEngine
-                .generateType3MsgObject( peerServerCertificate );
-            if ( develTrace )
-            {
-                log.trace( "Prepared NTLM AUTHENTICATE (type 3) message:\n" + ntlmAuthenticateMessage.debugDump() );
+            final AuthenticateMessage ntlmAuthenticateMessage = ntlmEngine.generateAuthenticateMessage( peerServerCertificate );
+            if ( develTrace ) {
+                log.trace( "Prepared NTLM AUTHENTICATE message:\n" + ntlmAuthenticateMessage.debugDump() );
             }
             final byte[] ntlmAuthenticateMessageEncoded = ntlmAuthenticateMessage.getBytes();
             if ( develTrace )
             {
-                log.trace( "Prepared NTLM AUTHENTICATE (type 3) message (encoded):\n"
+                log.trace( "Prepared NTLM AUTHENTICATE message (encoded):\n"
                     + DebugUtil.dump( ntlmAuthenticateMessageEncoded ) );
             }
 
             ntlmOutgoingHandle = ntlmEngine.createClientHandle();
-            ntlmIncomingHandle = ntlmEngine.createServer();
+            ntlmIncomingHandle = ntlmEngine.createServerHandle();
 
-            final CredSspTsRequest req = CredSspTsRequest.createNegoToken( ntlmAuthenticateMessageEncoded );
+            final CredSspTsRequest req = CredSspTsRequest.createNegoToken( lastReceivedTsRequest.getVersion(),
+                ntlmAuthenticateMessageEncoded );
             peerPublicKey = getSubjectPublicKeyDer( peerServerCertificate.getPublicKey() );
             final byte[] pubKeyAuth = createPubKeyAuth();
+            if ( develTrace ) {
+                log.trace( "pubKeyAuth: " + DebugUtil.dump( pubKeyAuth ) );
+            }
             req.setPubKeyAuth( pubKeyAuth );
 
             req.encode( buf );
             buf.flip();
-            if ( develTrace )
-            {
+            if ( develTrace ) {
                 log.trace( "Prepared CredSSP TsRequest (NTLM authenticate + pubKeyAuth):\n" + DebugUtil.dump( buf ) );
             }
             outputString = wrap( buf );
             state = State.PUB_KEY_AUTH_SENT;
 
-        }
-        else if ( state == State.PUB_KEY_AUTH_RECEIVED )
-        {
+        } else if ( state == State.PUB_KEY_AUTH_RECEIVED ) {
             verifyPubKeyAuthResponse( lastReceivedTsRequest.getPubKeyAuth() );
             final byte[] authInfo = createAuthInfo( ntcredentials );
-            final CredSspTsRequest req = CredSspTsRequest.createAuthInfo( authInfo );
+            final CredSspTsRequest req = CredSspTsRequest.createAuthInfo( lastReceivedTsRequest.getVersion(), authInfo );
 
             final ByteBuffer buf = allocateOutBuffer();
             req.encode( buf );
             buf.flip();
-            if ( develTrace )
-            {
+            if ( develTrace ) {
                 log.trace( "Prepared CredSSP TsRequest (authInfo):\n" + DebugUtil.dump( buf ) );
             }
             outputString = wrap( buf );
             state = State.CREDENTIALS_SENT;
-        }
-        else
-        {
+        } else {
             throw new AuthenticationException( "Wrong state " + state );
         }
-        if ( develTrace )
-        {
+
+        if ( develTrace ) {
             log.trace( ">> Seding: " + outputString );
         }
         final CharArrayBuffer buffer = new CharArrayBuffer( 32 );
-        if ( isProxy() )
-        {
+        if ( isProxy() ) {
             buffer.append( AUTH.PROXY_AUTH_RESP );
-        }
-        else
-        {
+        } else {
             buffer.append( AUTH.WWW_AUTH_RESP );
         }
         buffer.append( ": CredSSP " );
@@ -632,6 +616,9 @@ public class CredSspScheme extends AuthSchemeBase
         try
         {
             final byte[] encodedPubKeyInfo = publicKey.getEncoded();
+            if (develTrace) {
+                log.trace( "encodedPubKeyInfo: " + DebugUtil.dump( encodedPubKeyInfo ) );
+            }
 
             final ByteBuffer buf = ByteBuffer.wrap( encodedPubKeyInfo );
             DerUtil.getByteAndAssert( buf, 0x30, "initial sequence" );
@@ -653,6 +640,9 @@ public class CredSspScheme extends AuthSchemeBase
             }
             final byte[] subjectPublicKey = new byte[subjectPublicKeyLegth];
             buf.get( subjectPublicKey );
+            if (develTrace) {
+                log.trace( "subjectPublicKey DER: " + DebugUtil.dump( subjectPublicKey ) );
+            }
             return subjectPublicKey;
         }
         catch ( MalformedChallengeException e )

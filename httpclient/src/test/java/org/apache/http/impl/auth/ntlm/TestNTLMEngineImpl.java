@@ -24,9 +24,10 @@
  * <http://www.apache.org/>.
  *
  */
-package org.apache.http.impl.auth;
+package org.apache.http.impl.auth.ntlm;
 
 import org.apache.http.Consts;
+import org.apache.http.auth.NTCredentials;
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -215,21 +216,31 @@ public class TestNTLMEngineImpl {
     }
 
     @Test
-    public void testType1Message() throws Exception {
-        new NTLMEngineImpl().getType1Message("myhost", "mydomain");
+    public void testNegotiateMessage() throws Exception {
+        final NTLMEngine engine = new NTLMEngineImpl(createNtCredentials(), true);
+        engine.generateNegotiateMessage( null );
     }
 
     @Test
-    public void testType3Message() throws Exception {
-        new NTLMEngineImpl().getType3Message("me", "mypassword", "myhost", "mydomain",
-            toBytes("0001020304050607"),
-            0xffffffff,
-            null,null);
-        new NTLMEngineImpl().getType3Message("me", "mypassword", "myhost", "mydomain",
-            toBytes("0001020304050607"),
-            0xffffffff,
-            "mytarget",
-            toBytes("02000c0044004f004d00410049004e0001000c005300450052005600450052000400140064006f006d00610069006e002e0063006f006d00030022007300650072007600650072002e0064006f006d00610069006e002e0063006f006d0000000000"));
+    public void testAuthenticateMessage() throws Exception {
+//        NTLMEngine engine = new NTLMEngineImpl(createNtCredentials(), true);
+        // TODO: later
+//        ChallengeMessage challengeMessage = new ChallengeMessage( message )
+//
+//        engine.generateAuthenticateMessage( null );
+//        new NTLMEngineImpl().getType3Message("me", "mypassword", "myhost", "mydomain",
+//            toBytes("0001020304050607"),
+//            0xffffffff,
+//            null,null);
+//        new NTLMEngineImpl().getType3Message("me", "mypassword", "myhost", "mydomain",
+//            toBytes("0001020304050607"),
+//            0xffffffff,
+//            "mytarget",
+//            toBytes("02000c0044004f004d00410049004e0001000c005300450052005600450052000400140064006f006d00610069006e002e0063006f006d00030022007300650072007600650072002e0064006f006d00610069006e002e0063006f006d0000000000"));
+    }
+
+    private NTCredentials createNtCredentials() {
+        return new NTCredentials( "me", "mypassword", "myhost", "mydomain" );
     }
 
     @Test
