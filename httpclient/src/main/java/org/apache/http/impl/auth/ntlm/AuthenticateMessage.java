@@ -416,7 +416,7 @@ public class AuthenticateMessage extends NTLMOutputMessage
 
     public String debugDump()
     {
-        final StringBuilder sb = new StringBuilder( "Type3Message\n" );
+        final StringBuilder sb = new StringBuilder( "AuthenticationMessage\n" );
         sb.append( "  flags:\n    " ).append( NTLMEngineImpl.dumpFlags( type2Flags ) ).append( "\n" );
         sb.append( "  domainBytes:\n    " ).append( DebugUtil.dump( domainBytes ) ).append( "\n" );
         sb.append( "  hostBytes:\n    " ).append( DebugUtil.dump( hostBytes ) ).append( "\n" );

@@ -132,7 +132,7 @@ public class ChallengeMessage extends NTLMInputMessage
 
     public String debugDump()
     {
-        final StringBuilder sb = new StringBuilder( "Type2Message\n" );
+        final StringBuilder sb = new StringBuilder( "ChallengeMessage\n" );
         sb.append( "  flags:\n    " ).append( NTLMEngineImpl.dumpFlags( flags ) ).append( "\n" );
         sb.append( "  challenge:\n    " ).append( DebugUtil.dump( challenge ) ).append( "\n" );
         sb.append( "  target:\n    " ).append( target ).append( "\n" );

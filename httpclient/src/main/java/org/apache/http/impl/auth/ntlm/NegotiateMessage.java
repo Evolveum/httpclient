@@ -170,10 +170,10 @@ public class NegotiateMessage extends NTLMOutputMessage
 
     public String debugDump()
     {
-        final StringBuilder sb = new StringBuilder( "Type1Message\n" );
+        final StringBuilder sb = new StringBuilder( "NegotiateMessage\n" );
         sb.append( "  flags:\n    " ).append( NTLMEngineImpl.dumpFlags( flags ) ).append( "\n" );
         sb.append( "  hostBytes:\n    " ).append( DebugUtil.dump( hostBytes ) ).append( "\n" );
-        sb.append( "  domainBytes:\n    " ).append( domainBytes );
+        sb.append( "  domainBytes:\n    " ).append( DebugUtil.dump( domainBytes ) );
         return sb.toString();
     }
 

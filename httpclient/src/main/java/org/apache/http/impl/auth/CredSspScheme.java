@@ -36,6 +36,7 @@ import java.security.PublicKey;
 import java.security.cert.Certificate;
 import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
+import java.util.Arrays;
 import java.util.Base64;
 
 import javax.net.ssl.SSLContext;
@@ -175,47 +176,37 @@ public class CredSspScheme extends AuthSchemeBase
     }
 
 
-    private SSLEngine getSSLEngine()
-    {
-        if ( sslEngine == null )
-        {
+    private SSLEngine getSSLEngine() {
+        if ( sslEngine == null ) {
             sslEngine = createSSLEngine();
         }
         return sslEngine;
     }
 
 
-    private SSLEngine createSSLEngine()
-    {
+    private SSLEngine createSSLEngine() {
+
         SSLContext sslContext;
-        try
-        {
+        try {
             sslContext = SSLContexts.custom().build();
-        }
-        catch ( NoSuchAlgorithmException e )
-        {
+        } catch ( NoSuchAlgorithmException e ) {
             throw new RuntimeException( "Error creating SSL Context: " + e.getMessage(), e );
-        }
-        catch ( KeyManagementException e )
-        {
+        } catch ( KeyManagementException e ) {
             throw new RuntimeException( "Error creating SSL Context: " + e.getMessage(), e );
         }
 
-        final X509TrustManager tm = new X509TrustManager()
-        {
+        final X509TrustManager tm = new X509TrustManager() {
 
             @Override
             public void checkClientTrusted( final X509Certificate[] chain, final String authType )
-                throws CertificateException
-            {
+                throws CertificateException {
                 // Nothing to do.
             }
 
 
             @Override
             public void checkServerTrusted( final X509Certificate[] chain, final String authType )
-                throws CertificateException
-            {
+                throws CertificateException {
                 // Nothing to do, accept all. CredSSP server is using its own certificate without any
                 // binding to the PKI trust chains. The public key is verified as part of the CredSSP
                 // protocol exchange.
@@ -223,23 +214,29 @@ public class CredSspScheme extends AuthSchemeBase
 
 
             @Override
-            public X509Certificate[] getAcceptedIssuers()
-            {
+            public X509Certificate[] getAcceptedIssuers() {
                 return null;
             }
 
         };
-        try
-        {
+        try {
             sslContext.init( null, new TrustManager[]
                 { tm }, null );
-        }
-        catch ( KeyManagementException e )
-        {
+        } catch ( KeyManagementException e ) {
             throw new RuntimeException( "SSL Context initialization error: " + e.getMessage(), e );
+        }
+        if (develTrace) {
+            log.debug( "Created SSL Context with provider " + sslContext.getProvider() );
         }
         final SSLEngine sslEngine = sslContext.createSSLEngine();
         sslEngine.setUseClientMode( true );
+        if (develTrace) {
+            log.trace( "Created SSL engine:\n"+
+                    "    supported protocols: " + Arrays.toString( sslEngine.getSupportedProtocols() ) + "\n" +
+                    "    enabled protocols: " + Arrays.toString( sslEngine.getEnabledProtocols() ) + "\n" +
+                    "    supported ciphers: " + Arrays.toString( sslEngine.getSupportedCipherSuites() ) + "\n" +
+                    "    enabled ciphers: " + Arrays.toString( sslEngine.getEnabledCipherSuites() ));
+        }
         return sslEngine;
     }
 
@@ -275,7 +272,12 @@ public class CredSspScheme extends AuthSchemeBase
                 log.trace( "TLS handshake status: " + getSSLEngine().getHandshakeStatus() );
             }
             if ( getSSLEngine().getHandshakeStatus() == HandshakeStatus.NOT_HANDSHAKING ) {
-                log.trace( "TLS handshake finished, handshaked " + getSSLEngine().getSession().getProtocol() );
+                log.trace( "TLS handshake finished (" + getSSLEngine().getSession().getProtocol() + ")" );
+                if (develTrace) {
+                    log.trace( "SSL connection parameters:\n"+
+                            "    protocol: " + getSSLEngine().getSession().getProtocol() + "\n" +
+                            "    cipher: " + getSSLEngine().getSession().getCipherSuite());
+                }
                 state = State.TLS_HANDSHAKE_FINISHED;
             }
         }
