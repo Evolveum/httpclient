@@ -88,15 +88,13 @@ import org.apache.http.util.CharsetUtils;
  * The implementation was inspired by Python CredSSP and NTLM implementation by Jordan Borean.
  * </p>
  */
-public class CredSspScheme extends AuthSchemeBase
-{
+public class CredSspScheme extends AuthSchemeBase {
     private static final Charset UNICODE_LITTLE_UNMARKED = CharsetUtils.lookup( "UnicodeLittleUnmarked" );
     public static final String SCHEME_NAME = "CredSSP";
 
     private final Log log = LogFactory.getLog( CredSspScheme.class );
 
-    enum State
-    {
+    enum State {
         // Nothing sent, nothing received
         UNINITIATED,
 
@@ -123,6 +121,7 @@ public class CredSspScheme extends AuthSchemeBase
     }
 
     private State state;
+    private final SSLEngineFactory sslEngineFactory;
     private SSLEngine sslEngine;
     private NTLMEngine ntlmEngine;
     private CredSspTsRequest lastReceivedTsRequest;
@@ -142,39 +141,33 @@ public class CredSspScheme extends AuthSchemeBase
     private static boolean develTrace = false;
 
 
-    public CredSspScheme()
-    {
+    public CredSspScheme(final SSLEngineFactory sslEngineFactory) {
+        this.sslEngineFactory = sslEngineFactory;
         state = State.UNINITIATED;
     }
 
 
     @Override
-    public String getSchemeName()
-    {
+    public String getSchemeName() {
         return SCHEME_NAME;
     }
 
 
     @Override
-    public String getParameter( final String name )
-    {
+    public String getParameter( final String name ) {
         return null;
     }
 
 
     @Override
-    public String getRealm()
-    {
+    public String getRealm() {
         return null;
     }
 
-
     @Override
-    public boolean isConnectionBased()
-    {
+    public boolean isConnectionBased() {
         return true;
     }
-
 
     private SSLEngine getSSLEngine() {
         if ( sslEngine == null ) {
@@ -183,9 +176,15 @@ public class CredSspScheme extends AuthSchemeBase
         return sslEngine;
     }
 
-
     private SSLEngine createSSLEngine() {
+        if (sslEngineFactory == null) {
+            return createDefaultSSLEngine();
+        } else {
+            return sslEngineFactory.createSslEngine();
+        }
+    }
 
+    private SSLEngine createDefaultSSLEngine() {
         SSLContext sslContext;
         try {
             sslContext = SSLContexts.custom().build();
@@ -240,33 +239,25 @@ public class CredSspScheme extends AuthSchemeBase
         return sslEngine;
     }
 
-
     @Override
     protected void parseChallenge( final CharArrayBuffer buffer, final int beginIndex, final int endIndex )
-        throws MalformedChallengeException
-    {
+        throws MalformedChallengeException {
         final String inputString = buffer.substringTrimmed( beginIndex, endIndex );
-        if ( develTrace )
-        {
+        if ( develTrace ) {
             log.trace( "<< Received: " + inputString );
         }
 
-        if ( inputString.isEmpty() )
-        {
-            if ( state == State.UNINITIATED )
-            {
+        if ( inputString.isEmpty() ) {
+            if ( state == State.UNINITIATED ) {
                 // This is OK, just send out first message. That should start TLS handshake
-            }
-            else
-            {
+            } else {
                 final String msg = "Received unexpected empty input in state " + state;
                 log.error( msg );
                 throw new MalformedChallengeException( msg );
             }
         }
 
-        if ( state == State.TLS_HANDSHAKE )
-        {
+        if ( state == State.TLS_HANDSHAKE ) {
             unwrapHandshake( inputString );
             if ( develTrace ) {
                 log.trace( "TLS handshake status: " + getSSLEngine().getHandshakeStatus() );
@@ -282,8 +273,7 @@ public class CredSspScheme extends AuthSchemeBase
             }
         }
 
-        if ( state == State.NEGO_TOKEN_SENT )
-        {
+        if ( state == State.NEGO_TOKEN_SENT ) {
             final ByteBuffer buf = unwrap( inputString );
             state = State.NEGO_TOKEN_RECEIVED;
             lastReceivedTsRequest = CredSspTsRequest.createDecoded( buf );
@@ -292,13 +282,11 @@ public class CredSspScheme extends AuthSchemeBase
             }
         }
 
-        if ( state == State.PUB_KEY_AUTH_SENT )
-        {
+        if ( state == State.PUB_KEY_AUTH_SENT ) {
             final ByteBuffer buf = unwrap( inputString );
             state = State.PUB_KEY_AUTH_RECEIVED;
             lastReceivedTsRequest = CredSspTsRequest.createDecoded( buf );
-            if ( develTrace )
-            {
+            if ( develTrace ) {
                 log.trace( "Received tsrequest(pubKeyAuth):\n" + lastReceivedTsRequest.debugDump() );
             }
         }
@@ -309,8 +297,7 @@ public class CredSspScheme extends AuthSchemeBase
     @Deprecated
     public Header authenticate(
         final Credentials credentials,
-        final HttpRequest request ) throws AuthenticationException
-    {
+        final HttpRequest request ) throws AuthenticationException {
         return authenticate( credentials, request, null );
     }
 
@@ -319,8 +306,7 @@ public class CredSspScheme extends AuthSchemeBase
     public Header authenticate(
         final Credentials credentials,
         final HttpRequest request,
-        final HttpContext context ) throws AuthenticationException
-    {
+        final HttpContext context ) throws AuthenticationException {
         NTCredentials ntcredentials = null;
         try {
             ntcredentials = ( NTCredentials ) credentials;

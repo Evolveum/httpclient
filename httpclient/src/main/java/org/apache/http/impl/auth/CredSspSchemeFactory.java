@@ -33,12 +33,20 @@ import org.apache.http.auth.AuthSchemeProvider;
 import org.apache.http.protocol.HttpContext;
 
 
-public class CredSspSchemeFactory implements AuthSchemeProvider
-{
+public class CredSspSchemeFactory implements AuthSchemeProvider {
+
+    private SSLEngineFactory sslEngineFactory;
+
+    public SSLEngineFactory getSslEngineFactory() {
+        return sslEngineFactory;
+    }
+
+    public void setSslEngineFactory(final SSLEngineFactory sslEngineFactory ) {
+        this.sslEngineFactory = sslEngineFactory;
+    }
 
     @Override
-    public AuthScheme create( final HttpContext context )
-    {
-        return new CredSspScheme();
+    public AuthScheme create( final HttpContext context ) {
+        return new CredSspScheme(sslEngineFactory);
     }
 }
