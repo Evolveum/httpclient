@@ -43,6 +43,7 @@ import org.apache.commons.logging.LogFactory;
 import org.apache.http.Consts;
 import org.apache.http.auth.NTCredentials;
 import org.apache.http.impl.auth.DebugUtil;
+import org.apache.http.impl.auth.DerUtil;
 import org.apache.http.util.CharsetUtils;
 
 
@@ -130,45 +131,31 @@ public class NTLMEngineImpl implements NTLMEngine
 
     /** Secure random generator */
     private static final java.security.SecureRandom RND_GEN;
-    static
-    {
+    static {
         java.security.SecureRandom rnd = null;
-        try
-        {
+        try {
             rnd = java.security.SecureRandom.getInstance( "SHA1PRNG" );
-        }
-        catch ( final Exception ignore )
-        {
+        } catch ( final Exception ignore ) {
         }
         RND_GEN = rnd;
     }
 
     /** The signature string as bytes in the default encoding */
-    static final byte[] SIGNATURE = getNullTerminatedAsciiString( "NTLMSSP" );
+    static final byte[] SIGNATURE = DerUtil.nullTerminatedAsciiString( "NTLMSSP" );
 
     // Key derivation magic strings for the SIGNKEY algorithm defined in
     // [MS-NLMP] section 3.4.5.2
-    static final byte[] SIGN_MAGIC_SERVER = getNullTerminatedAsciiString(
+    static final byte[] SIGN_MAGIC_SERVER = DerUtil.nullTerminatedAsciiString(
         "session key to server-to-client signing key magic constant" );
-    static final byte[] SIGN_MAGIC_CLIENT = getNullTerminatedAsciiString(
+    static final byte[] SIGN_MAGIC_CLIENT = DerUtil.nullTerminatedAsciiString(
         "session key to client-to-server signing key magic constant" );
-    static final byte[] SEAL_MAGIC_SERVER = getNullTerminatedAsciiString(
+    static final byte[] SEAL_MAGIC_SERVER = DerUtil.nullTerminatedAsciiString(
         "session key to server-to-client sealing key magic constant" );
-    static final byte[] SEAL_MAGIC_CLIENT = getNullTerminatedAsciiString(
+    static final byte[] SEAL_MAGIC_CLIENT = DerUtil.nullTerminatedAsciiString(
         "session key to client-to-server sealing key magic constant" );
 
     // prefix for GSS API channel binding
     static final byte[] MAGIC_TLS_SERVER_ENDPOINT = "tls-server-end-point:".getBytes( Consts.ASCII );
-
-
-    private static byte[] getNullTerminatedAsciiString( final String source )
-    {
-        final byte[] bytesWithoutNull = source.getBytes( Consts.ASCII );
-        final byte[] target = new byte[bytesWithoutNull.length + 1];
-        System.arraycopy( bytesWithoutNull, 0, target, 0, bytesWithoutNull.length );
-        target[bytesWithoutNull.length] = ( byte ) 0x00;
-        return target;
-    }
 
     static final Log log = LogFactory.getLog( NTLMEngineImpl.class );
 
@@ -375,13 +362,11 @@ public class NTLMEngineImpl implements NTLMEngine
 
     /** Calculate a challenge block */
     private static byte[] generateChallenge() throws NTLMEngineException {
-        if ( RND_GEN == null )
-        {
+        if ( RND_GEN == null ) {
             throw new NTLMEngineException( "Random generator not available" );
         }
         final byte[] rval = new byte[8];
-        synchronized ( RND_GEN )
-        {
+        synchronized ( RND_GEN ) {
             RND_GEN.nextBytes( rval );
         }
         return rval;
@@ -391,13 +376,11 @@ public class NTLMEngineImpl implements NTLMEngine
     /** Calculate a 16-byte secondary key */
     private static byte[] generateExportedSessionKey() throws NTLMEngineException
     {
-        if ( RND_GEN == null )
-        {
+        if ( RND_GEN == null ) {
             throw new NTLMEngineException( "Random generator not available" );
         }
         final byte[] rval = new byte[16];
-        synchronized ( RND_GEN )
-        {
+        synchronized ( RND_GEN ) {
             RND_GEN.nextBytes( rval );
         }
 
@@ -480,19 +463,15 @@ public class NTLMEngineImpl implements NTLMEngine
         public byte[] getClientChallenge2()
             throws NTLMEngineException
         {
-            if ( clientChallenge2 == null )
-            {
+            if ( clientChallenge2 == null ) {
                 clientChallenge2 = generateChallenge();
             }
             return clientChallenge2;
         }
 
 
-        public byte[] getExportedSessionKey()
-            throws NTLMEngineException
-        {
-            if ( exportedSessionKey == null )
-            {
+        public byte[] getExportedSessionKey() throws NTLMEngineException {
+            if ( exportedSessionKey == null ) {
                 exportedSessionKey = generateExportedSessionKey();
             }
             return exportedSessionKey;
@@ -500,11 +479,8 @@ public class NTLMEngineImpl implements NTLMEngine
 
 
         /** Calculate and return the LMHash */
-        public byte[] getLMHash()
-            throws NTLMEngineException
-        {
-            if ( lmHash == null )
-            {
+        public byte[] getLMHash() throws NTLMEngineException {
+            if ( lmHash == null ) {
                 lmHash = lmHash( password );
             }
             return lmHash;
@@ -512,11 +488,8 @@ public class NTLMEngineImpl implements NTLMEngine
 
 
         /** Calculate and return the LMResponse */
-        public byte[] getLMResponse()
-            throws NTLMEngineException
-        {
-            if ( lmResponse == null )
-            {
+        public byte[] getLMResponse() throws NTLMEngineException {
+            if ( lmResponse == null ) {
                 lmResponse = lmResponse( getLMHash(), challenge );
             }
             return lmResponse;
@@ -524,11 +497,8 @@ public class NTLMEngineImpl implements NTLMEngine
 
 
         /** Calculate and return the NTLMHash */
-        public byte[] getNTLMPasswordHash()
-            throws NTLMEngineException
-        {
-            if ( ntlmPasswordHash == null )
-            {
+        public byte[] getNTLMPasswordHash() throws NTLMEngineException {
+            if ( ntlmPasswordHash == null ) {
                 ntlmPasswordHash = ntowfv1( password );
             }
             return ntlmPasswordHash;
@@ -536,11 +506,8 @@ public class NTLMEngineImpl implements NTLMEngine
 
 
         /** Calculate and return the NTLMResponse */
-        public byte[] getNTLMResponse()
-            throws NTLMEngineException
-        {
-            if ( ntlmResponse == null )
-            {
+        public byte[] getNTLMResponse() throws NTLMEngineException {
+            if ( ntlmResponse == null ) {
                 ntlmResponse = lmResponse( getNTLMPasswordHash(), challenge );
             }
             return ntlmResponse;
@@ -548,8 +515,7 @@ public class NTLMEngineImpl implements NTLMEngine
 
 
         /** Calculate the LMv2 hash. ResponseKeyLM in the specifications. */
-        public byte[] getResponseKeyLm()
-            throws NTLMEngineException {
+        public byte[] getResponseKeyLm() throws NTLMEngineException {
             if ( responseKeyLm == null ) {
                 responseKeyLm = ntowfv2lm( domain, user, password );
             }
@@ -558,8 +524,7 @@ public class NTLMEngineImpl implements NTLMEngine
 
 
         /** Calculate the NTLMv2 hash. ResponseKeyNT in the specifications. */
-        public byte[] getResponseKeyNt()
-            throws NTLMEngineException {
+        public byte[] getResponseKeyNt() throws NTLMEngineException {
             if ( responseKeyNt == null ) {
                 responseKeyNt = ntowfv2( domain, user, getNTLMPasswordHash() );
             }
@@ -1370,12 +1335,9 @@ public class NTLMEngineImpl implements NTLMEngine
         HMACMD5( final byte[] input ) throws NTLMEngineException
         {
             byte[] key = input;
-            try
-            {
+            try {
                 md5 = MessageDigest.getInstance( "MD5" );
-            }
-            catch ( final Exception ex )
-            {
+            } catch ( final Exception ex ) {
                 // Umm, the algorithm doesn't exist - throw an
                 // NTLMEngineException!
                 throw new NTLMEngineException(
@@ -1387,22 +1349,18 @@ public class NTLMEngineImpl implements NTLMEngine
             opad = new byte[64];
 
             int keyLength = key.length;
-            if ( keyLength > 64 )
-            {
+            if ( keyLength > 64 ) {
                 // Use MD5 of the key instead, as described in RFC 2104
                 md5.update( key );
                 key = md5.digest();
                 keyLength = key.length;
             }
             int i = 0;
-            while ( i < keyLength )
-            {
+            while ( i < keyLength ) {
                 ipad[i] = ( byte ) ( key[i] ^ ( byte ) 0x36 );
                 opad[i] = ( byte ) ( key[i] ^ ( byte ) 0x5c );
                 i++;
-            }
-            while ( i < 64 )
-            {
+            } while ( i < 64 ) {
                 ipad[i] = ( byte ) 0x36;
                 opad[i] = ( byte ) 0x5c;
                 i++;

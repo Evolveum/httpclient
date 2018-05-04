@@ -31,6 +31,7 @@ package org.apache.http.impl.auth;
 import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
 import java.security.KeyManagementException;
+import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.PublicKey;
 import java.security.cert.Certificate;
@@ -88,10 +89,24 @@ import org.apache.http.util.CharsetUtils;
  * The implementation was inspired by Python CredSSP and NTLM implementation by Jordan Borean.
  * </p>
  */
-public class CredSspScheme extends AuthSchemeBase
-{
+public class CredSspScheme extends AuthSchemeBase {
+
     private static final Charset UNICODE_LITTLE_UNMARKED = CharsetUtils.lookup( "UnicodeLittleUnmarked" );
     public static final String SCHEME_NAME = "CredSSP";
+
+    // Note: this is specified in the spec as UNICODE(ClientServerHashMagic). But in reality is is NOT unicode. It is plain ASCII.
+    private static final byte[] CLIENT_SERVER_MAGIC_HASH = DerUtil.nullTerminatedAsciiString("CredSSP Client-To-Server Binding Hash");
+    private static final byte[] SERVER_CLIENT_MAGIC_HASH = DerUtil.nullTerminatedAsciiString("CredSSP Server-To-Client Binding Hash");
+
+    private static final java.security.SecureRandom RND_GEN;
+    static {
+        java.security.SecureRandom rnd = null;
+        try {
+            rnd = java.security.SecureRandom.getInstance( "SHA1PRNG" );
+        } catch ( final Exception ignore ) {
+        }
+        RND_GEN = rnd;
+    }
 
     private final Log log = LogFactory.getLog( CredSspScheme.class );
 
@@ -129,6 +144,7 @@ public class CredSspScheme extends AuthSchemeBase
     private NTLMHandle ntlmOutgoingHandle;
     private NTLMHandle ntlmIncomingHandle;
     private byte[] peerPublicKey;
+    private byte[] clientNonce;
 
     /**
      * Enabling or disabling the development trace (extra logging).
@@ -139,39 +155,33 @@ public class CredSspScheme extends AuthSchemeBase
      * protocol is TLS-encrypted. Some parts are encrypted several times. We cannot use packet
      * sniffer or other tools for diagnostics. We need to see the values before encryption.
      */
-    private static boolean develTrace = false;
+    private static boolean develTrace = true;
 
 
-    public CredSspScheme()
-    {
+    public CredSspScheme() {
         state = State.UNINITIATED;
     }
 
-
     @Override
-    public String getSchemeName()
-    {
+    public String getSchemeName() {
         return SCHEME_NAME;
     }
 
 
     @Override
-    public String getParameter( final String name )
-    {
+    public String getParameter( final String name ) {
         return null;
     }
 
 
     @Override
-    public String getRealm()
-    {
+    public String getRealm() {
         return null;
     }
 
 
     @Override
-    public boolean isConnectionBased()
-    {
+    public boolean isConnectionBased() {
         return true;
     }
 
@@ -240,6 +250,9 @@ public class CredSspScheme extends AuthSchemeBase
         return sslEngine;
     }
 
+    private byte[] encodeUnicode( final String string ) {
+        return string.getBytes( UNICODE_LITTLE_UNMARKED );
+    }
 
     @Override
     protected void parseChallenge( final CharArrayBuffer buffer, final int beginIndex, final int endIndex )
@@ -397,11 +410,7 @@ public class CredSspScheme extends AuthSchemeBase
             final CredSspTsRequest req = CredSspTsRequest.createNegoToken( lastReceivedTsRequest.getVersion(),
                 ntlmAuthenticateMessageEncoded );
             peerPublicKey = getSubjectPublicKeyDer( peerServerCertificate.getPublicKey() );
-            final byte[] pubKeyAuth = createPubKeyAuth();
-            if ( develTrace ) {
-                log.trace( "pubKeyAuth: " + DebugUtil.dump( pubKeyAuth ) );
-            }
-            req.setPubKeyAuth( pubKeyAuth );
+            setPubKeyAuth(req, lastReceivedTsRequest.getVersion());
 
             req.encode( buf );
             buf.flip();
@@ -412,7 +421,7 @@ public class CredSspScheme extends AuthSchemeBase
             state = State.PUB_KEY_AUTH_SENT;
 
         } else if ( state == State.PUB_KEY_AUTH_RECEIVED ) {
-            verifyPubKeyAuthResponse( lastReceivedTsRequest.getPubKeyAuth() );
+            verifyPubKeyAuthResponse();
             final byte[] authInfo = createAuthInfo( ntcredentials );
             final CredSspTsRequest req = CredSspTsRequest.createAuthInfo( lastReceivedTsRequest.getVersion(), authInfo );
 
@@ -443,8 +452,60 @@ public class CredSspScheme extends AuthSchemeBase
     }
 
 
-    private int getNtlmFlags()
-    {
+    private void setPubKeyAuth( final CredSspTsRequest req, final int version ) throws AuthenticationException {
+        if (version <= 4) {
+            final byte[] pubKeyAuth = createPubKeyAuth();
+            if ( develTrace ) {
+                log.trace( "pubKeyAuth: " + DebugUtil.dump( pubKeyAuth ) );
+            }
+            req.setPubKeyAuth( pubKeyAuth );
+
+        } else {
+            clientNonce = createClientNonce();
+            final byte[] pubKeyHash = createPubKeyHash( CLIENT_SERVER_MAGIC_HASH, clientNonce );
+            if ( develTrace ) {
+                log.trace( "clientNonce: " + DebugUtil.dump( clientNonce ) + "\npubKeyAuth(hash): " + DebugUtil.dump( pubKeyHash ) );
+            }
+            req.setClientNonce( clientNonce );
+            req.setPubKeyAuth( ntlmOutgoingHandle.signAndEcryptMessage( pubKeyHash ) );
+        }
+    }
+
+    private byte[] createClientNonce() throws AuthenticationException {
+        if ( RND_GEN == null ) {
+            throw new AuthenticationException( "Random generator not available" );
+        }
+        final byte[] rval = new byte[32];
+        synchronized ( RND_GEN ) {
+            RND_GEN.nextBytes( rval );
+        }
+        return rval;
+    }
+
+    private byte[] createPubKeyHash( final byte[] magic, final byte[] clientNonce ) throws AuthenticationException {
+        final byte[] hash = sha256(magic, clientNonce, peerPublicKey);
+        if ( develTrace ) {
+            log.trace( "magic: " + DebugUtil.dump( CLIENT_SERVER_MAGIC_HASH ) + "\nclientNonce: " + DebugUtil.dump( clientNonce ) + "\npeerPublicKey: " + DebugUtil.dump( peerPublicKey ) + "\nhash: " + DebugUtil.dump( hash ) );
+        }
+        return hash;
+    }
+
+
+    private byte[] sha256( final byte[]... data ) throws AuthenticationException {
+        MessageDigest sha;
+        try {
+            sha = MessageDigest.getInstance( "SHA-256" );
+        } catch ( NoSuchAlgorithmException e ) {
+            throw new AuthenticationException("Error initializing SHA-256", e);
+        }
+        for (byte[] chunk : data) {
+            sha.update( chunk );
+        }
+        return sha.digest();
+    }
+
+
+    private int getNtlmFlags() {
         return NTLMEngineImpl.FLAG_REQUEST_OEM_ENCODING |
             NTLMEngineImpl.FLAG_REQUEST_SIGN |
             NTLMEngineImpl.FLAG_REQUEST_SEAL |
@@ -458,29 +519,21 @@ public class CredSspScheme extends AuthSchemeBase
             NTLMEngineImpl.FLAG_REQUEST_56BIT_ENCRYPTION;
     }
 
-
-    private X509Certificate getPeerServerCertificate() throws AuthenticationException
-    {
+    private X509Certificate getPeerServerCertificate() throws AuthenticationException {
         Certificate[] peerCertificates;
-        try
-        {
+        try {
             peerCertificates = sslEngine.getSession().getPeerCertificates();
-        }
-        catch ( SSLPeerUnverifiedException e )
-        {
+        } catch ( SSLPeerUnverifiedException e ) {
             throw new AuthenticationException( e.getMessage(), e );
         }
-        for ( Certificate peerCertificate : peerCertificates )
-        {
-            if ( !( peerCertificate instanceof X509Certificate ) )
-            {
+
+        for ( Certificate peerCertificate : peerCertificates ) {
+            if ( !( peerCertificate instanceof X509Certificate ) ) {
                 continue;
             }
             final X509Certificate peerX509Cerificate = ( X509Certificate ) peerCertificate;
-            if ( peerX509Cerificate.getBasicConstraints() != -1 )
-            {
-                if ( develTrace )
-                {
+            if ( peerX509Cerificate.getBasicConstraints() != -1 ) {
+                if ( develTrace ) {
                     log.trace( "Skipping CA certificate " + ( ( X509Certificate ) peerCertificate ).getSubjectDN() );
                 }
                 continue;
@@ -490,38 +543,49 @@ public class CredSspScheme extends AuthSchemeBase
         return null;
     }
 
-
-    private byte[] createPubKeyAuth() throws AuthenticationException
-    {
+    private byte[] createPubKeyAuth() throws AuthenticationException {
         return ntlmOutgoingHandle.signAndEcryptMessage( peerPublicKey );
     }
 
 
-    private void verifyPubKeyAuthResponse( final byte[] pubKeyAuthResponse ) throws AuthenticationException
-    {
+    private void verifyPubKeyAuthResponse(  ) throws AuthenticationException {
+        final byte[] pubKeyAuthResponse = lastReceivedTsRequest.getPubKeyAuth();
         final byte[] pubKeyReceived = ntlmIncomingHandle.decryptAndVerifySignedMessage( pubKeyAuthResponse );
 
-        // assert: pubKeyReceived = peerPublicKey + 1
-        // The following algorithm is a bit simplified. But due to the ASN.1 encoding the first byte
-        // of the public key will be 0x30 we can pretty much rely on a fact that there will be no carry
-        if ( peerPublicKey.length != pubKeyReceived.length )
-        {
-            throw new AuthenticationException( "Public key mismatch in pubKeyAuth response" );
-        }
-        if ( ( peerPublicKey[0] + 1 ) != pubKeyReceived[0] )
-        {
-            throw new AuthenticationException( "Public key mismatch in pubKeyAuth response" );
-        }
-        for ( int i = 1; i < peerPublicKey.length; i++ )
-        {
-            if ( peerPublicKey[i] != pubKeyReceived[i] )
-            {
-                throw new AuthenticationException( "Public key mismatch in pubKeyAuth response" );
-            }
-        }
-        log.trace( "Received public key response is valid" );
-    }
+        if (lastReceivedTsRequest.getVersion() <= 4) {
 
+            // assert: pubKeyReceived = peerPublicKey + 1
+            // The following algorithm is a bit simplified. But due to the ASN.1 encoding the first byte
+            // of the public key will be 0x30 we can pretty much rely on a fact that there will be no carry
+            if ( peerPublicKey.length != pubKeyReceived.length ) {
+                log.error( "Public key mismatch in pubKeyAuth response (version<=4)" );
+                throw new AuthenticationException( "Public key mismatch in pubKeyAuth response (version<=4)" );
+            }
+            if ( ( peerPublicKey[0] + 1 ) != pubKeyReceived[0] ) {
+                log.error( "Public key mismatch in pubKeyAuth response (version<=4)" );
+                throw new AuthenticationException( "Public key mismatch in pubKeyAuth response (version<=4)" );
+            }
+            for ( int i = 1; i < peerPublicKey.length; i++ ) {
+                if ( peerPublicKey[i] != pubKeyReceived[i] ) {
+                    log.error( "Public key mismatch in pubKeyAuth response (version<=4)" );
+                    throw new AuthenticationException( "Public key mismatch in pubKeyAuth response (version<=4)" );
+                }
+            }
+            log.trace( "Received public key response is valid (version<=4)" );
+
+        } else {
+
+            final byte[] expectedHash = createPubKeyHash( SERVER_CLIENT_MAGIC_HASH, clientNonce );
+            if ( develTrace ) {
+                log.trace( "verification(version " + lastReceivedTsRequest.getVersion() + ")\nexpected: " + DebugUtil.dump( expectedHash ) + "\nreceived: " + DebugUtil.dump( pubKeyReceived ) );
+            }
+            if (!Arrays.equals(expectedHash, pubKeyReceived)) {
+                log.error( "Public key mismatch in pubKeyAuth response (version>=5)" );
+                throw new AuthenticationException( "Public key mismatch in pubKeyAuth response (version>=5)" );
+            }
+            log.trace( "Received public key response is valid (version>=5)" );
+        }
+    }
 
     private byte[] createAuthInfo( final NTCredentials ntcredentials ) throws AuthenticationException
     {
@@ -601,13 +665,6 @@ public class CredSspScheme extends AuthSchemeBase
             throw new AuthenticationException( e.getMessage(), e );
         }
     }
-
-
-    private byte[] encodeUnicode( final String string )
-    {
-        return string.getBytes( UNICODE_LITTLE_UNMARKED );
-    }
-
 
     private byte[] getSubjectPublicKeyDer( final PublicKey publicKey ) throws AuthenticationException
     {

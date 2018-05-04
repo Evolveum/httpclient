@@ -28,18 +28,17 @@ package org.apache.http.impl.auth;
 
 import java.nio.ByteBuffer;
 
+import org.apache.http.Consts;
 import org.apache.http.auth.MalformedChallengeException;
 
 /**
  * Utilities for primitive (but working) ASN.1 DER encoding/decoding.
  * Used in CredSSP and NTLM implementation.
  */
-public class DerUtil
-{
+public class DerUtil {
 
     public static void getByteAndAssert( final ByteBuffer buf, final int expectedValue, final String errorMessage )
-        throws MalformedChallengeException
-    {
+        throws MalformedChallengeException {
         final byte bufByte = buf.get();
         if ( bufByte != expectedValue )
         {
@@ -47,14 +46,12 @@ public class DerUtil
         }
     }
 
-    private static String expectMessage( final int expectedValue, final int realValue )
-    {
+    private static String expectMessage( final int expectedValue, final int realValue ) {
         return "(expected " + String.format( "%02X", expectedValue ) + ", got " + String.format( "%02X", realValue )
             + ")";
     }
 
-    public static int parseLength( final ByteBuffer buf )
-    {
+    public static int parseLength( final ByteBuffer buf ) {
         byte bufByte = buf.get();
         if ( bufByte == 0x80 )
         {
@@ -78,8 +75,7 @@ public class DerUtil
     }
 
     public static void getLengthAndAssert( final ByteBuffer buf, final int expectedValue, final String errorMessage )
-        throws MalformedChallengeException
-    {
+        throws MalformedChallengeException {
         final int bufLength = parseLength( buf );
         if ( expectedValue != bufLength )
         {
@@ -87,8 +83,7 @@ public class DerUtil
         }
     }
 
-    public static int getAndAssertContentSpecificTag( final ByteBuffer buf, final String errorMessage ) throws MalformedChallengeException
-    {
+    public static int getAndAssertContentSpecificTag( final ByteBuffer buf, final String errorMessage ) throws MalformedChallengeException {
         final byte bufByte = buf.get();
         if ( ( bufByte & 0xe0 ) != 0xa0 )
         {
@@ -98,14 +93,12 @@ public class DerUtil
         return tag;
     }
 
-    public static void parseError( final ByteBuffer buf, final String errorMessage ) throws MalformedChallengeException
-    {
+    public static void parseError( final ByteBuffer buf, final String errorMessage ) throws MalformedChallengeException {
         throw new MalformedChallengeException(
             "Error parsing TsRequest (position:" + buf.position() + "): " + errorMessage );
     }
 
-    public static byte[] encodeLength( final int length )
-    {
+    public static byte[] encodeLength( final int length ) {
         if ( length < 128 )
         {
             final byte[] encoded = new byte[1];
@@ -132,6 +125,14 @@ public class DerUtil
         }
 
         return encoded;
+    }
+
+    public static byte[] nullTerminatedAsciiString( final String source ) {
+        final byte[] bytesWithoutNull = source.getBytes( Consts.ASCII );
+        final byte[] target = new byte[bytesWithoutNull.length + 1];
+        System.arraycopy( bytesWithoutNull, 0, target, 0, bytesWithoutNull.length );
+        target[bytesWithoutNull.length] = ( byte ) 0x00;
+        return target;
     }
 
 }

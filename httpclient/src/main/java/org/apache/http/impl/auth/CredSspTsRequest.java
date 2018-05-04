@@ -41,12 +41,13 @@ public class CredSspTsRequest
 {
 
     private static final byte VERSION_MIN = 2;
-    private static final byte VERSION_MAX = 3;
+    private static final byte VERSION_MAX = 6;
 
     private byte version = VERSION_MAX;
     private byte[] negoToken;
     private byte[] authInfo;
     private byte[] pubKeyAuth;
+    private byte[] clientNonce; // only version 5 and higher
 
 
     protected CredSspTsRequest()
@@ -69,8 +70,7 @@ public class CredSspTsRequest
     }
 
 
-    public static CredSspTsRequest createAuthInfo( final byte version, final byte[] authInfo )
-    {
+    public static CredSspTsRequest createAuthInfo( final byte version, final byte[] authInfo ) {
         final CredSspTsRequest req = new CredSspTsRequest();
         req.version = version;
         req.authInfo = authInfo;
@@ -78,66 +78,60 @@ public class CredSspTsRequest
     }
 
 
-    public static CredSspTsRequest createDecoded( final ByteBuffer buf ) throws MalformedChallengeException
-    {
+    public static CredSspTsRequest createDecoded( final ByteBuffer buf ) throws MalformedChallengeException {
         final CredSspTsRequest req = new CredSspTsRequest();
         req.decode( buf );
         return req;
     }
 
-    public byte getVersion()
-    {
+    public byte getVersion() {
         return version;
     }
 
-
-    public void setVersion( final byte version )
-    {
+    public void setVersion( final byte version ) {
         this.version = version;
     }
 
 
-    public byte[] getNegoToken()
-    {
+    public byte[] getNegoToken() {
         return negoToken;
     }
 
-
-    public void setNegoToken( final byte[] negoToken )
-    {
+    public void setNegoToken( final byte[] negoToken ) {
         this.negoToken = negoToken;
     }
 
-
-    public byte[] getAuthInfo()
-    {
+    public byte[] getAuthInfo() {
         return authInfo;
     }
 
-
-    public void setAuthInfo( final byte[] authInfo )
-    {
+    public void setAuthInfo( final byte[] authInfo ) {
         this.authInfo = authInfo;
     }
 
 
-    public byte[] getPubKeyAuth()
-    {
+    public byte[] getPubKeyAuth() {
         return pubKeyAuth;
     }
 
-
-    public void setPubKeyAuth( final byte[] pubKeyAuth )
-    {
+    public void setPubKeyAuth( final byte[] pubKeyAuth ) {
         this.pubKeyAuth = pubKeyAuth;
     }
 
+    public byte[] getClientNonce() {
+        return clientNonce;
+    }
 
-    public void decode( final ByteBuffer buf ) throws MalformedChallengeException
-    {
+    public void setClientNonce( final byte[] clientNonce ) {
+        this.clientNonce = clientNonce;
+    }
+
+
+    public void decode( final ByteBuffer buf ) throws MalformedChallengeException {
         negoToken = null;
         authInfo = null;
         pubKeyAuth = null;
+        clientNonce = null;
 
         DerUtil.getByteAndAssert( buf, 0x30, "initial sequence" );
         DerUtil.parseLength( buf );
@@ -162,6 +156,9 @@ public class CredSspTsRequest
                     break;
                 case 4:
                     processErrorCode( buf );
+                    break;
+                case 5:
+                    parseClientNonce( buf );
                     break;
                 default:
                     DerUtil.parseError( buf, "unexpected content tag " + contentTag );
@@ -206,26 +203,21 @@ public class CredSspTsRequest
     }
 
 
-    private void parseAuthInfo( final ByteBuffer buf ) throws MalformedChallengeException
-    {
+    private void parseAuthInfo( final ByteBuffer buf ) throws MalformedChallengeException {
         DerUtil.getByteAndAssert( buf, 0x04, "authInfo type" );
         final int length = DerUtil.parseLength( buf );
         authInfo = new byte[length];
         buf.get( authInfo );
     }
 
-
-    private void parsePubKeyAuth( final ByteBuffer buf ) throws MalformedChallengeException
-    {
+    private void parsePubKeyAuth( final ByteBuffer buf ) throws MalformedChallengeException {
         DerUtil.getByteAndAssert( buf, 0x04, "pubKeyAuth type" );
         final int length = DerUtil.parseLength( buf );
         pubKeyAuth = new byte[length];
         buf.get( pubKeyAuth );
     }
 
-
-    private void processErrorCode( final ByteBuffer buf ) throws MalformedChallengeException
-    {
+    private void processErrorCode( final ByteBuffer buf ) throws MalformedChallengeException {
         DerUtil.getLengthAndAssert( buf, 3, "error code length" );
         DerUtil.getByteAndAssert( buf, 0x02, "error code type" );
         DerUtil.getLengthAndAssert( buf, 1, "error code length" );
@@ -233,6 +225,12 @@ public class CredSspTsRequest
         DerUtil.parseError( buf, "Error code " + errorCode );
     }
 
+    private void parseClientNonce( final ByteBuffer buf ) throws MalformedChallengeException {
+        DerUtil.getByteAndAssert( buf, 0x04, "clientNonce type" );
+        final int length = DerUtil.parseLength( buf );
+        clientNonce = new byte[length];
+        buf.get( clientNonce );
+    }
 
     public void encode( final ByteBuffer buf )
     {
@@ -244,10 +242,9 @@ public class CredSspTsRequest
 
         inner.put( ( byte ) ( 0x02 ) ); // INTEGER tag
         inner.put( ( byte ) 1 ); // length
-        inner.put( ( byte ) VERSION_MAX ); // value
+        inner.put( ( byte ) version ); // value
 
-        if ( negoToken != null )
-        {
+        if ( negoToken != null ) {
             int len = negoToken.length;
             final byte[] negoTokenLengthBytes = DerUtil.encodeLength( len );
             len += 1 + negoTokenLengthBytes.length;
@@ -277,8 +274,7 @@ public class CredSspTsRequest
             inner.put( negoToken );
         }
 
-        if ( authInfo != null )
-        {
+        if ( authInfo != null ) {
             final byte[] authInfoEncodedLength = DerUtil.encodeLength( authInfo.length );
 
             inner.put( ( byte ) ( 0x02 | 0xa0 ) ); // authInfo tag [2]
@@ -289,8 +285,7 @@ public class CredSspTsRequest
             inner.put( authInfo );
         }
 
-        if ( pubKeyAuth != null )
-        {
+        if ( pubKeyAuth != null ) {
             final byte[] pubKeyAuthEncodedLength = DerUtil.encodeLength( pubKeyAuth.length );
 
             inner.put( ( byte ) ( 0x03 | 0xa0 ) ); // pubKeyAuth tag [3]
@@ -299,6 +294,19 @@ public class CredSspTsRequest
             inner.put( ( byte ) ( 0x04 ) ); // OCTET STRING tag
             inner.put( pubKeyAuthEncodedLength );
             inner.put( pubKeyAuth );
+        }
+
+        // TODO: errorCode ... but it is optional and any error codes seem quite pointless in most MS software anyway
+
+        if ( clientNonce != null ) {
+            final byte[] clientNonceEncodedLength = DerUtil.encodeLength( clientNonce.length );
+
+            inner.put( ( byte ) ( 0x05 | 0xa0 ) ); // clientNonce tag [5]
+            inner.put( DerUtil.encodeLength( 1 + clientNonceEncodedLength.length + clientNonce.length ) ); // length
+
+            inner.put( ( byte ) ( 0x04 ) ); // OCTET STRING tag
+            inner.put( clientNonceEncodedLength );
+            inner.put( clientNonce );
         }
 
         inner.flip();
@@ -310,9 +318,9 @@ public class CredSspTsRequest
     }
 
 
-    public String debugDump()
-    {
+    public String debugDump() {
         final StringBuilder sb = new StringBuilder( "TsRequest\n" );
+        sb.append( "  version: ").append( version ).append( "\n" );
         sb.append( "  negoToken:\n" );
         sb.append( "    " );
         DebugUtil.dump( sb, negoToken );
@@ -324,13 +332,16 @@ public class CredSspTsRequest
         sb.append( "  pubKeyAuth:\n" );
         sb.append( "    " );
         DebugUtil.dump( sb, pubKeyAuth );
+        sb.append( "\n" );
+        sb.append( "  clientNonce:\n" );
+        sb.append( "    " );
+        DebugUtil.dump( sb, clientNonce );
         return sb.toString();
     }
 
 
     @Override
-    public String toString()
-    {
+    public String toString() {
         return "TsRequest(negoToken=" + Arrays.toString( negoToken ) + ", authInfo="
             + Arrays.toString( authInfo ) + ", pubKeyAuth=" + Arrays.toString( pubKeyAuth ) + ")";
     }
